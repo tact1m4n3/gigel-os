@@ -1,0 +1,5 @@
+/.vscode
+*.o
+/gigel-kernel
+/image.iso
+/sysroot
