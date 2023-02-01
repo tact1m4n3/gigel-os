@@ -28,31 +28,27 @@ extern uint64_t tsc_mhz;
 uint64_t next_pid = 1;
 
 LIST_DEFINE(PROCESS_LIST);
-QUEUE_DEFINE(READY_QUEUE);
-QUEUE_DEFINE(WAIT_QUEUE);
-QUEUE_DEFINE(RETIRE_QUEUE);
+QUEUE_DEFINE(RUN_QUEUE);
 
+spinlock_t pid_lock;
 spinlock_t process_list_lock;
-spinlock_t ready_queue_lock;
-spinlock_t wait_queue_lock;
-spinlock_t retire_queue_lock;
+spinlock_t run_queue_lock;
 
-struct process* new_process() {
-    struct process* proc = (void*)calloc_page();
-    proc->pid = next_pid++;
-    proc->state = PROC_NEW;
-    proc->p4 = alloc_page();
-    proc->stack_ptr = (uint64_t)proc + PAGE_SIZE;
-
-    memcpy((void*)proc->p4, (void*)kernel_p4, PAGE_SIZE);
-    map_page(proc->p4, USERSPACE_END - PAGE_SIZE, alloc_page(), PAGE_WRITE | PAGE_USER);
-
-    reset_process_state(proc, USERSPACE_START, USERSPACE_END);
-
-    return proc;
+static uint64_t alloc_pid() {
+    acquire_lock(&pid_lock);
+    uint64_t pid = next_pid++;
+    release_lock(&pid_lock);
+    return pid;
 }
 
-void reset_process_state(struct process* proc, uint64_t rip, uint64_t rsp) {
+static struct process* lookup_process(uint64_t pid) {
+    LIST_FOREACH(PROCESS_LIST)
+        if (item->pid == pid)
+            return item;
+    return NULL;
+}
+
+static void init_process_stack(struct process* proc, uint64_t rip, uint64_t rsp) {
     proc->stack_ptr = (uint64_t)proc + PAGE_SIZE - sizeof(struct swtch_stack);
 
     struct swtch_stack* stack = (struct swtch_stack*)proc->stack_ptr;
@@ -65,50 +61,60 @@ void reset_process_state(struct process* proc, uint64_t rip, uint64_t rsp) {
     stack->r.rsp = rsp;
 }
 
-void yield() {
-    if (current_process)
-        switch_stack(&current_process->stack_ptr, &scheduler->stack_ptr);
+static struct process* scheduler_next() {
+    if (QUEUE_EMPTY(RUN_QUEUE))
+        return NULL;
+
+    acquire_lock(&run_queue_lock);
+    struct process* proc = QUEUE_NEXT(RUN_QUEUE);
+    QUEUE_POP(RUN_QUEUE);
+
+    if (proc->state == PROC_SLEEPING && read_tsc() < proc->wake_time) {
+        QUEUE_PUSH(RUN_QUEUE, proc);
+        release_lock(&run_queue_lock);
+        return NULL;
+    }
+
+    release_lock(&run_queue_lock);
+    return proc;
+}
+
+static struct regs* pagefault_callback(struct regs* r) {
+    PANIC("pagefault\n");
+    return r;
+}
+
+struct process* new_process() {
+    if (next_pid == 1)
+        set_interrupt_handler(0x0E, &pagefault_callback);
+
+    struct process* proc = (void*)calloc_page();
+    proc->pid = alloc_pid();
+    proc->state = PROC_READY;
+    proc->p4 = alloc_page();
+    proc->stack_ptr = (uint64_t)proc + PAGE_SIZE;
+
+    memcpy((void*)proc->p4, (void*)kernel_p4, PAGE_SIZE);
+    map_page(proc->p4, USERSPACE_END - PAGE_SIZE, alloc_page(), PAGE_WRITE | PAGE_USER);
+
+    init_process_stack(proc, USERSPACE_START, USERSPACE_END);
+
+    acquire_lock(&process_list_lock);
+    LIST_APPEND(PROCESS_LIST, proc);
+    release_lock(&process_list_lock);
+
+    return proc;
 }
 
 void schedule_process(struct process* proc) {
-    if (proc->state == PROC_NEW || proc->state == PROC_RUNNING) {
-        INFO("process %x ready\n", proc->pid);
-        proc->state = PROC_READY;
-        acquire_lock(&ready_queue_lock);
-        QUEUE_PUSH(READY_QUEUE, proc);
-        release_lock(&ready_queue_lock);
-    } else if (proc->state == PROC_SLEEPING) {
-        INFO("process %x is sleeping\n", proc->pid);
-        acquire_lock(&wait_queue_lock);
-        QUEUE_PUSH(WAIT_QUEUE, proc);
-        release_lock(&wait_queue_lock);
-    } else if (proc->state == PROC_KILLED) {
-        INFO("process %x exited\n", proc->pid);
-        proc->state = PROC_RETIRED;
-        acquire_lock(&retire_queue_lock);
-        QUEUE_PUSH(RETIRE_QUEUE, proc);
-        release_lock(&retire_queue_lock);
-    }
+    acquire_lock(&run_queue_lock);
+    QUEUE_PUSH(RUN_QUEUE, proc);
+    release_lock(&run_queue_lock);
 }
 
-static struct process* scheduler_next() {
-    if (!QUEUE_EMPTY(WAIT_QUEUE)) {
-        acquire_lock(&wait_queue_lock);
-        struct process* proc = QUEUE_POP(WAIT_QUEUE);
-        if (proc->state == PROC_SLEEPING && read_tsc() < proc->wake_time) {
-            QUEUE_PUSH(WAIT_QUEUE, proc);
-            proc = NULL;
-        }
-        release_lock(&wait_queue_lock);
-        return proc;
-    }
-    if (!QUEUE_EMPTY(READY_QUEUE)) {
-        acquire_lock(&ready_queue_lock);
-        struct process* proc = QUEUE_POP(READY_QUEUE);
-        release_lock(&ready_queue_lock);
-        return proc;
-    }
-    return NULL;
+void yield() {
+    if (current_process)
+        switch_stack(&current_process->stack_ptr, &scheduler->stack_ptr);
 }
 
 static void scheduler_loop() {
@@ -116,7 +122,7 @@ static void scheduler_loop() {
 
     while (1) {
         struct process* next;
-        SPIN(!(next = scheduler_next()));
+        while (!(next = scheduler_next()));
 
         uint64_t time = read_tsc();
         next->run_time += time - next->sched_time;
@@ -129,7 +135,14 @@ static void scheduler_loop() {
 
         switch_stack(&scheduler->stack_ptr, &current_process->stack_ptr);
 
-        schedule_process(current_process);
+        if (current_process->state == PROC_RUNNING)
+            current_process->state = PROC_READY;
+
+        if (current_process->state != PROC_KILLED)
+            schedule_process(current_process);
+        else
+            INFO("process %x killed\n", current_process->pid);
+
         current_process = NULL;
     }
 }
@@ -151,6 +164,32 @@ void start_scheduler() {
 void sys_exit() {
     current_process->state = PROC_KILLED;
     yield();
+}
+
+int sys_fork(struct regs* r) {
+    // INFO("forking process %x\n", current_process->pid);
+
+    struct process* new = new_process();
+
+    struct swtch_stack* stack = (void*)new->stack_ptr;
+    memcpy((void*)&stack->r, (void*)r, sizeof(struct regs));
+    stack->r.rax = 0;
+
+    uint64_t i = USERSPACE_START;
+    while (is_page(current_process->p4, i)) {
+        clone_page(new->p4, current_process->p4, i);
+        i += PAGE_SIZE;
+    }
+
+    i = USERSPACE_END - PAGE_SIZE;
+    while (is_page(current_process->p4, i)) {
+        clone_page(new->p4, current_process->p4, i);
+        i -= PAGE_SIZE;
+    }
+
+    schedule_process(new);
+
+    return new->pid;
 }
 
 void sys_sleep(uint64_t secs) {

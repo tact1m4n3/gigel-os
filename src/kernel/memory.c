@@ -5,9 +5,10 @@
 #include <memory.h>
 #include <cpu.h>
 
-#define MASK_FLAGS(x) (x & ~0xFFF)
+#define GET_FLAGS(x) ((x) & 0xFFF)
+#define MASK_FLAGS(x) ((x) & ~0xFFF)
 
-#define PRESENT(x) (x & PAGE_PRESENT)
+#define PRESENT(x) ((x) & PAGE_PRESENT)
 
 #define PT(x) ((uint64_t*)MASK_FLAGS(x))
 #define PT_ENTRIES 512
@@ -57,8 +58,14 @@ void free_page(uint64_t page) {
     release_lock(&page_alloc_lock);
 }
 
+int is_page(uint64_t p4, uint64_t addr) {
+    if (p4 && PRESENT(P4E) && PRESENT(P3E) && PRESENT(P2E) && PRESENT(P1E))
+        return 1;
+    return 0;
+}
+
 uint64_t get_page(uint64_t p4, uint64_t addr) {
-    if (p4 && PRESENT(P4E) && PRESENT(P3E) && PRESENT(P2E))
+    if (is_page(p4, addr))
         return P1E;
     return -1;
 }
@@ -78,15 +85,29 @@ int map_page(uint64_t p4, uint64_t addr, uint64_t page, uint16_t flags) {
     return 1;
 }
 
+int clone_page(uint64_t dst_p4, uint64_t src_p4, uint64_t addr) {
+    uint64_t src_page = get_page(src_p4, addr);
+    if (src_page == (uint64_t)-1)
+        return 0;
+    uint64_t dst_page = alloc_page();
+    if (!is_page(dst_p4, addr))
+        if (!map_page(dst_p4, addr, dst_page, GET_FLAGS(src_page)))
+            return 0;
+    memcpy((void*)dst_page, (void*)MASK_FLAGS(src_page), PAGE_SIZE);
+    return 1;
+}
+
 void memory_init() {
     kernel_p4 = read_cr3();
 
+    INFO("is page %x\n", is_page(kernel_p4, 0x0));
     INFO("initializing memory\n");
     uint64_t i = 0, type, start, end;
     while (multiboot_get_memory_area(i, &type, &start, &end)) {
         INFO("entry %x-%x %x\n", start, end, type);
         for (uint64_t j = start; j < end; j += PAGE_SIZE) {
-            map_page(kernel_p4, j, j, PAGE_WRITE);
+            if (get_page(kernel_p4, j) != j)
+                map_page(kernel_p4, j, j, PAGE_WRITE);
             if (type == MMAP_FREE)
                 if (!(j >= (uint64_t)&kernel_start && j < (uint64_t)&kernel_end) && !multiboot_is_page_used(j))
                     free_page(j);

@@ -8,7 +8,7 @@
     }
 #define LIST_DECLARE(...) _LIST_DECLARE(__VA_ARGS__)
 
-#define _LIST_DEFINE(list, type, prev, next) struct list list = {0, 0}
+#define _LIST_DEFINE(list, type, prev, next) struct list list
 #define LIST_DEFINE(...) _LIST_DEFINE(__VA_ARGS__)
 
 #define _LIST_SPOT(list, type, prev, next) \

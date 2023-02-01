@@ -27,7 +27,7 @@ void smp_init() {
         ap_stack = alloc_page();
 
         lapic_wake(acpi_info.cpus[i].lapic_id, 0x8000);
-        SPIN(!ap_started);
+        while (!ap_started);
     }
 }
 

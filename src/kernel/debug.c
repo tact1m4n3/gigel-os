@@ -1,8 +1,11 @@
 #include <string.h>
 #include <ports.h>
+#include <spinlock.h>
 #include <debug.h>
 
 #define COM1_PORT 0x3F8
+
+spinlock_t print_lock;
 
 static void hex2str(char* buf, uint64_t val) {
     char syms[] = "0123456789ABCDEF";
@@ -68,8 +71,10 @@ void debug_init() {
 }
 
 void print(char* fmt, ...) {
+    acquire_lock(&print_lock);
     va_list args;
     va_start(args, fmt);
     print_with_args(fmt, args);
     va_end(args);
+    release_lock(&print_lock);
 }

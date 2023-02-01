@@ -7,7 +7,6 @@
 #define _EXPAND(x, y) _CONCAT(x, y)
 #define RESERVED _EXPAND(reserved, __LINE__)
 
-#define SPIN(x) while (x) asm("pause")
 #define HALT while (1) asm("hlt")
 
 typedef char int8_t;

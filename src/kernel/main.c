@@ -12,11 +12,16 @@
 #include <syscall.h>
 
 void test() {
+    uint64_t pid;
+    asm("int $0x80" : "=a"(pid) : "a"(2)); // fork
     for (int i = 0; i < 5; i++) {
-        asm("int $0x80" : : "a"(2), "b"("Hello world from process\n"));
-        asm("int $0x80" : : "a"(3), "b"(1));
+        if (pid)
+            asm("int $0x80" : : "a"(4), "b"("hello from original process\n")); // print
+        else
+            asm("int $0x80" : : "a"(4), "b"("hello from forked process\n")); // print
+        asm("int $0x80" : : "a"(3), "b"(1)); // sleep
     }
-    asm("int $0x80" : : "a"(1));
+    asm("int $0x80" : : "a"(1)); // exit
 }
 
 void kernel_main(uint64_t mboot_magic, void* mboot_info) {
@@ -45,6 +50,7 @@ void kernel_main(uint64_t mboot_magic, void* mboot_info) {
     map_page(proc->p4, USERSPACE_START, alloc_page(), PAGE_WRITE | PAGE_USER);
     write_cr3(proc->p4);
     memcpy((void*)USERSPACE_START, (void*)&test, PAGE_SIZE);
+    write_cr3(kernel_p4);
     schedule_process(proc);
 
     start_scheduler();
