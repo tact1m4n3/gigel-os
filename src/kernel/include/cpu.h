@@ -19,7 +19,7 @@ struct cpu {
     struct process* scheduler;
 };
 
-extern struct cpu __seg_gs* this_core;
+extern struct cpu __seg_gs* this_cpu;
 
 uint64_t read_cr2();
 void write_cr2(uint64_t);

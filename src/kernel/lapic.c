@@ -39,14 +39,14 @@ static void tsc_delay(uint64_t msecs) {
 }
 
 static struct regs* lapic_callback(struct regs* r) {
-    // INFO("APIC TICK %x!\n", this_core->id);
+    // INFO("APIC TICK %x!\n", this_cpu->id);
     LAPIC_WRITE(0x0B0, 0x0);
     yield();
     return r;
 }
 
 void lapic_init() {
-    if (this_core->id == 0) {
+    if (this_cpu->id == 0) {
         set_interrupt_handler(0x7F, &lapic_callback);
         map_page(kernel_p4, acpi_info.lapic_base, acpi_info.lapic_base, PAGE_WRITE);
         tsc_mhz = measure_tsc_mhz();

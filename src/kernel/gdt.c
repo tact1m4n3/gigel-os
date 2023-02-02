@@ -51,12 +51,12 @@ struct gdt_entry boot_gdt[] = {
 struct gdt_ptr gdt_ptr = {2*8-1, (uint64_t)&boot_gdt};
 
 void gdt_init() {
-    INFO("initializing gdt on core %x\n", this_core->id);
+    INFO("initializing gdt on cpu %x\n", this_cpu->id);
 
-    struct gdt_entry* gdt = (void*)&this_core->gdt;
+    struct gdt_entry* gdt = (void*)&this_cpu->gdt;
     memcpy(gdt, boot_gdt, sizeof(boot_gdt));
 
-    struct tss* tss = (void*)&this_core->tss;
+    struct tss* tss = (void*)&this_cpu->tss;
     tss->iopb = sizeof(tss);
 
     uint32_t tss_limit = sizeof(struct tss)-1;
@@ -75,6 +75,6 @@ void gdt_init() {
 }
 
 void set_kernel_stack(uint64_t rsp0) {
-    struct tss* tss = (void*)&this_core->tss;
+    struct tss* tss = (void*)&this_cpu->tss;
     tss->rsp0 = rsp0;
 }

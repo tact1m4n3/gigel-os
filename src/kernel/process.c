@@ -5,8 +5,8 @@
 #include <cpu.h>
 #include <process.h>
 
-#define current_process this_core->process
-#define scheduler this_core->scheduler
+#define current_process this_cpu->process
+#define scheduler this_cpu->scheduler
 
 struct swtch_stack {
     uint64_t rbp;
@@ -80,7 +80,7 @@ static struct process* scheduler_next() {
 }
 
 static struct regs* pagefault_callback(struct regs* r) {
-    PANIC("pagefault\n");
+    PANIC("pagefault at %x\n", read_cr2());
     return r;
 }
 
@@ -118,7 +118,7 @@ void yield() {
 }
 
 static void scheduler_loop() {
-    INFO("scheduler started on core %x\n", this_core->id);
+    INFO("scheduler started on cpu %x\n", this_cpu->id);
 
     while (1) {
         struct process* next;

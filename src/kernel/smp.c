@@ -9,7 +9,7 @@
 extern void* ap_trampoline_start;
 extern void* ap_trampoline_end;
 
-struct cpu __seg_gs* this_core;
+struct cpu __seg_gs* this_cpu;
 
 int ap_started;
 int ap_id;
@@ -20,10 +20,10 @@ void smp_init() {
 
     memcpy((void*)0x8000, &ap_trampoline_start, (uint64_t)&ap_trampoline_end - (uint64_t)&ap_trampoline_start);
 
-    INFO("starting other cpu cores(n_cpus=%x)\n", acpi_info.n_cpus);
+    INFO("starting other cpus(n_cpus=%x)\n", acpi_info.n_cpus);
     for (int i = 1; i < acpi_info.n_cpus; i++) {
         ap_started = 0;
-        ap_id = acpi_info.cpus[i].id;
+        ap_id = i;
         ap_stack = alloc_page();
 
         lapic_wake(acpi_info.cpus[i].lapic_id, 0x8000);
@@ -40,7 +40,7 @@ void ap_main() {
 
     ap_started = 1;
 
-    INFO("started core %x\n", this_core->id);
+    INFO("started cpu %x\n", this_cpu->id);
 
     gdt_init();
     idt_init();

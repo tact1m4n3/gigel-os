@@ -18,7 +18,7 @@ extern uint64_t kernel_p4;
 void memory_init();
 uint64_t alloc_page();
 uint64_t calloc_page();
-void free_page(uint64_t page);
+int free_page(uint64_t page);
 int is_page(uint64_t p4, uint64_t addr);
 uint64_t get_page(uint64_t p4, uint64_t addr);
 int map_page(uint64_t p4, uint64_t addr, uint64_t page, uint16_t flags);

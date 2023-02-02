@@ -2,7 +2,7 @@ CC = x86_64-elf-gcc
 LD = x86_64-elf-ld
 EMU = qemu-system-x86_64
 
-KERNEL_CFLAGS := -c --freestanding -Wall -Wextra -pedantic -Isrc/kernel/include
+KERNEL_CFLAGS := -c --freestanding -Wall -Wextra -Isrc/kernel/include
 KERNEL_LDFLAGS := -n -nostdlib --no-warn-rwx-segments -Tsrc/kernel/link.ld
 
 KERNEL_OBJS = $(patsubst %.S, %.o, $(shell find src/kernel -name '*.S'))

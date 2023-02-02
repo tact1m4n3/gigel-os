@@ -60,9 +60,9 @@ static void irq_remap() {
 }
 
 void idt_init() {
-    INFO("initializing idt on core %x\n", this_core->id);
+    INFO("initializing idt on cpu %x\n", this_cpu->id);
 
-    if (this_core->id == 0) {
+    if (this_cpu->id == 0) {
         set_idt_entry(0, (uint64_t)&_isr0, 0x08, IDT_INTERRUPT | IDT_DPL(0) | IDT_PRESENT);
         set_idt_entry(1, (uint64_t)&_isr1, 0x08, IDT_INTERRUPT | IDT_DPL(0) | IDT_PRESENT);
         set_idt_entry(2, (uint64_t)&_isr2, 0x08, IDT_INTERRUPT | IDT_DPL(0) | IDT_PRESENT);
@@ -133,8 +133,8 @@ struct regs* isr_handler(struct regs* r) {
     if ((handler = int_handlers[r->int_no]) != NULL)
         r = handler(r);
     else if (r->int_no == 0x0E)
-        PANIC("unhandled exception %x at %x on core %x\n", r->int_no, read_cr2(), this_core->id);
+        PANIC("unhandled exception %x at %x on cpu %x\n", r->int_no, read_cr2(), this_cpu->id);
     else if (r->int_no < 0x20)
-        PANIC("unhandled exception %x on core %x\n", r->int_no, this_core->id);
+        PANIC("unhandled exception %x on cpu %x\n", r->int_no, this_cpu->id);
     return r;
 }
